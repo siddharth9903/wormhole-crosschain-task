@@ -8,7 +8,6 @@ This project demonstrates cross-chain token minting using Wormhole's relayer net
 - Message signing and verification
 - Token minting with limits (20 mints maximum)
 - Automated testing with Foundry
-- Complete deployment scripts for both chains
 
 ## Prerequisites
 
@@ -23,10 +22,10 @@ This project demonstrates cross-chain token minting using Wormhole's relayer net
 git clone <repository-url>
 cd cross-chain-tokens
 
-# Install Foundry dependencies
-forge install wormhole-foundation/wormhole-solidity-sdk --no-commit
-forge install OpenZeppelin/openzeppelin-contracts --no-commit
-```
+# # Install Foundry dependencies
+# forge install wormhole-foundation/wormhole-solidity-sdk --no-commit
+# forge install OpenZeppelin/openzeppelin-contracts --no-commit
+# ```
 
 
 ## Testing
