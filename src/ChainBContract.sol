@@ -3,8 +3,10 @@ pragma solidity ^0.8.20;
 
 import { IWormholeRelayer } from "wormhole-solidity-sdk/interfaces/IWormholeRelayer.sol";
 import { IWormholeReceiver } from "wormhole-solidity-sdk/interfaces/IWormholeReceiver.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
-contract ChainBContract is IWormholeReceiver {
+contract ChainBContract is Ownable, ReentrancyGuard, IWormholeReceiver {
     uint256 constant GAS_LIMIT = 200_000;
 
     IWormholeRelayer public immutable wormholeRelayer;
@@ -16,7 +18,9 @@ contract ChainBContract is IWormholeReceiver {
     event MessageReceived(address indexed user);
     event TokenMintInitiated(address indexed user);
 
-    constructor(address _wormholeRelayer, address _chainAContract, uint16 _sourceChain) {
+    error InsufficientBalance(uint256 required, uint256 available);
+
+    constructor(address _wormholeRelayer, address _chainAContract, uint16 _sourceChain) Ownable(msg.sender) {
         wormholeRelayer = IWormholeRelayer(_wormholeRelayer);
         chainAContract = _chainAContract;
         sourceChain = _sourceChain;
@@ -28,18 +32,25 @@ contract ChainBContract is IWormholeReceiver {
         bytes32 sourceAddress,
         uint16 _sourceChain,
         bytes32 deliveryHash
-    ) public payable override {
+    ) public payable override nonReentrant {
         require(msg.sender == address(wormholeRelayer), "Only relayer allowed");
         require(_sourceChain == sourceChain, "Wrong source chain");
         require(sourceAddress == bytes32(uint256(uint160(chainAContract))), "Wrong source contract");
         require(!processedDeliveryHashes[deliveryHash], "Message already processed");
 
         address user = abi.decode(payload, (address));
+        require(user != address(0), "Invalid user address");
 
-        // Get delivery price quote for return message
+        // Get delivery price and check balance
         (uint256 deliveryPrice,) = wormholeRelayer.quoteEVMDeliveryPrice(sourceChain, 0, GAS_LIMIT);
 
-        // Send message back to Chain A to initiate minting
+        if (address(this).balance < deliveryPrice) {
+            revert InsufficientBalance(deliveryPrice, address(this).balance);
+        }
+
+        processedDeliveryHashes[deliveryHash] = true;
+        emit MessageReceived(user);
+
         wormholeRelayer.sendPayloadToEvm{ value: deliveryPrice }(
             sourceChain,
             chainAContract,
@@ -47,10 +58,12 @@ contract ChainBContract is IWormholeReceiver {
             0, // no receiver value
             GAS_LIMIT
         );
-
-        processedDeliveryHashes[deliveryHash] = true;
-        emit MessageReceived(user);
         emit TokenMintInitiated(user);
+    }
+
+    function recoverETH() external onlyOwner {
+        (bool success,) = owner().call{ value: address(this).balance }("");
+        require(success, "ETH recovery failed");
     }
 
     // Function to receive ETH for relayer fees

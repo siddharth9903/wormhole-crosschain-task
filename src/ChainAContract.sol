@@ -5,15 +5,20 @@ import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { IWormholeRelayer } from "wormhole-solidity-sdk/interfaces/IWormholeRelayer.sol";
 import { IWormholeReceiver } from "wormhole-solidity-sdk/interfaces/IWormholeReceiver.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "forge-std/console.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
-contract ChainAContract is ERC20, Ownable, IWormholeReceiver {
+contract ChainAContract is ERC20, Ownable, ReentrancyGuard, IWormholeReceiver {
     uint256 constant GAS_LIMIT = 200_000;
     uint256 public constant TOKENS_PER_MINT = 100 * 10 ** 18; // 100 tokens
     uint256 public constant MAX_MINTS = 20;
 
     IWormholeRelayer public immutable wormholeRelayer;
     uint16 public immutable targetChain;
+
+    address public chainBContract;
+    bool public isChainBContractSet;
 
     uint256 public mintCount;
     mapping(address => bool) public hasMinted;
@@ -22,17 +27,34 @@ contract ChainAContract is ERC20, Ownable, IWormholeReceiver {
     event SignatureSubmitted(address indexed user, bytes signature);
     event CrossChainMessageSent(uint16 targetChain, address targetAddress);
     event TokensMinted(address indexed user);
+    event ChainBContractSet(address chainBContract);
+
+    error UnauthorizedChainBContractSet();
+    error ChainBContractAlreadySet();
+    error ChainBContractNotSet();
+    error InvalidChainBContractAddress();
 
     constructor(address _wormholeRelayer, uint16 _targetChain) ERC20("ABC Token", "ABC") Ownable(msg.sender) {
         wormholeRelayer = IWormholeRelayer(_wormholeRelayer);
         targetChain = _targetChain;
     }
 
+    function setChainBContract(address _chainBContract) external onlyOwner {
+        if (isChainBContractSet) revert ChainBContractAlreadySet();
+        if (_chainBContract == address(0)) revert InvalidChainBContractAddress();
+
+        isChainBContractSet = true;
+        chainBContract = _chainBContract;
+
+        emit ChainBContractSet(_chainBContract);
+    }
+
     function quoteCrossChainMessage() public view returns (uint256 cost) {
         (cost,) = wormholeRelayer.quoteEVMDeliveryPrice(targetChain, 0, GAS_LIMIT);
     }
 
-    function submitSignature(address targetAddress, bytes memory signature) external payable {
+    function submitSignature(bytes memory signature) external payable nonReentrant {
+        if (!isChainBContractSet) revert ChainBContractNotSet();
         require(mintCount < MAX_MINTS, "Max mints reached");
         require(!hasMinted[msg.sender], "Already minted");
 
@@ -50,14 +72,14 @@ contract ChainAContract is ERC20, Ownable, IWormholeReceiver {
         // Send cross-chain message
         wormholeRelayer.sendPayloadToEvm{ value: cost }(
             targetChain,
-            targetAddress,
+            chainBContract,
             abi.encode(msg.sender),
             0, // no receiver value
             GAS_LIMIT
         );
 
         emit SignatureSubmitted(msg.sender, signature);
-        emit CrossChainMessageSent(targetChain, targetAddress);
+        emit CrossChainMessageSent(targetChain, chainBContract);
     }
 
     function receiveWormholeMessages(
@@ -66,21 +88,27 @@ contract ChainAContract is ERC20, Ownable, IWormholeReceiver {
         bytes32 sourceAddress,
         uint16 sourceChain,
         bytes32 deliveryHash
-    ) public payable override {
+    ) public payable override nonReentrant {
+        if (!isChainBContractSet) revert ChainBContractNotSet();
+
+        // Initial validations
         require(msg.sender == address(wormholeRelayer), "Only relayer allowed");
         require(!processedDeliveryHashes[deliveryHash], "Message already processed");
         require(sourceChain == targetChain, "Invalid source chain");
+        require(sourceAddress == bytes32(uint256(uint160(chainBContract))), "Invalid source contract");
 
+        // Decode and validate payload
         address user = abi.decode(payload, (address));
+        require(user != address(0), "Invalid user address");
         require(!hasMinted[user], "Already minted");
         require(mintCount < MAX_MINTS, "Max mints reached");
 
-        // Mint tokens
-        _mint(user, TOKENS_PER_MINT);
+        processedDeliveryHashes[deliveryHash] = true;
         hasMinted[user] = true;
         mintCount++;
 
-        processedDeliveryHashes[deliveryHash] = true;
+        _mint(user, TOKENS_PER_MINT);
+
         emit TokensMinted(user);
     }
 
