@@ -1,66 +1,51 @@
-## Foundry
+# Cross-Chain Token Minting with Wormhole
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+This project demonstrates cross-chain token minting using Wormhole's relayer network. Users can sign a message on Chain A (Goerli) to initiate a process that mints tokens after verification through Chain B (Mumbai).
 
-Foundry consists of:
+## Features
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+- Cross-chain message passing using Wormhole
+- Message signing and verification
+- Token minting with limits (20 mints maximum)
+- Automated testing with Foundry
+- Complete deployment scripts for both chains
 
-## Documentation
+## Prerequisites
 
-https://book.getfoundry.sh/
+- [Foundry](https://book.getfoundry.sh/getting-started/installation)
+- [Node.js](https://nodejs.org/)
 
-## Usage
+## Project Setup
 
-### Build
+1. Clone and install dependencies:
+```bash
+# Clone the repository
+git clone <repository-url>
+cd cross-chain-tokens
 
-```shell
-$ forge build
+# Install Foundry dependencies
+forge install wormhole-foundation/wormhole-solidity-sdk --no-commit
+forge install OpenZeppelin/openzeppelin-contracts --no-commit
 ```
 
-### Test
 
-```shell
-$ forge test
+## Testing
+
+Run the test suite:
+```bash
+# Run all tests
+forge test -vvv
+
+# Run specific test
+forge test --match-test testCrossChainMinting -vvv
+
+# Run tests with gas reporting
+forge test --gas-report
 ```
 
-### Format
+## Architecture
 
-```shell
-$ forge fmt
-```
+See [docs/wormhole-flow.md](./docs/wormhole-flow.md) for a detailed sequence diagram of the cross-chain communication flow.
 
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+## Network Details
+https://wormhole.com/docs/build/reference/contract-addresses/
